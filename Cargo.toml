@@ -1,0 +1,29 @@
+﻿[package]
+name = "ingameime_core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+jni-adapter = ["dep:jni", "dep:jni-sys"]
+
+[dependencies]
+jni = { version = "0.22.4", optional = true }
+jni-sys = { version = "0.4", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62.2"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Input_Ime",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+    "Win32_UI_TextServices",
+    "Win32_UI_WindowsAndMessaging",
+] }
