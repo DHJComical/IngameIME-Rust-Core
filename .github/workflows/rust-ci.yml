@@ -1,0 +1,86 @@
+﻿name: Rust CI
+
+on:
+  push:
+    branches:
+      - main
+      - rust-integration
+    tags:
+      - "*"
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.MD"
+      - ".github/workflows/**"
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.MD"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check core build
+        run: cargo check --locked
+
+      - name: Check JNI adapter build
+        run: cargo check --locked --features jni-adapter
+
+  build-windows:
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release DLL (JNI adapter)
+        run: cargo build --release --locked --features jni-adapter
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingameime_core-windows-x64
+          path: |
+            target/release/ingameime_core.dll
+            target/release/ingameime_core.pdb
+          if-no-files-found: warn
+
+  release:
+    runs-on: windows-latest
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ingameime_core-windows-x64
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/ingameime_core.dll
+            dist/ingameime_core.pdb
