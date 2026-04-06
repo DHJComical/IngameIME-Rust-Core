@@ -1,16 +1,17 @@
 use crate::callbacks::{CandidateCallback, CommitCallback, InputModeCallback, PreEditCallback};
 use crate::model::{CandidateConfig, InputMode};
 
+#[cfg(windows)]
 enum Backend {
-    #[cfg(windows)]
     Imm32(Box<crate::platform::windows::Imm32Backend>),
-    #[cfg(windows)]
     Tsf(Box<crate::platform::windows::TsInputContext>),
 }
 
 pub struct ImeContext {
     #[cfg(windows)]
     backend: Backend,
+    #[cfg(target_os = "linux")]
+    backend: crate::platform::linux::LinuxInputContext,
 }
 
 impl ImeContext {
@@ -38,7 +39,13 @@ impl ImeContext {
             });
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        {
+            let backend = crate::platform::linux::LinuxInputContext::new(hwnd, api, ui_less)?;
+            return Some(Self { backend });
+        }
+
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = (hwnd, api, ui_less);
             None
@@ -51,6 +58,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_activated(activated),
             Backend::Tsf(b) => b.set_activated(activated),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_activated(activated);
     }
 
     pub fn is_activated(&self) -> bool {
@@ -62,7 +72,12 @@ impl ImeContext {
             };
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        {
+            self.backend.is_activated()
+        }
+
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             false
         }
@@ -77,7 +92,12 @@ impl ImeContext {
             };
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        {
+            self.backend.input_mode()
+        }
+
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             InputMode::Unsupported
         }
@@ -89,6 +109,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.force_alpha_mode(),
             Backend::Tsf(b) => b.force_alpha_mode(),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.force_alpha_mode();
     }
 
     pub fn force_native_mode(&mut self) {
@@ -97,6 +120,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.force_native_mode(),
             Backend::Tsf(b) => b.force_native_mode(),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.force_native_mode();
     }
 
     pub fn set_preedit_rect(&mut self, x: i32, y: i32, width: i32, height: i32) {
@@ -105,6 +131,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_preedit_rect(x, y, width, height),
             Backend::Tsf(b) => b.set_preedit_rect(x, y, width, height),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_preedit_rect(x, y, width, height);
     }
 
     pub fn set_candidate_config(&mut self, config: CandidateConfig) {
@@ -113,6 +142,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_candidate_config(config),
             Backend::Tsf(b) => b.set_candidate_config(config),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_candidate_config(config);
     }
 
     pub fn candidate_config(&self) -> CandidateConfig {
@@ -124,7 +156,12 @@ impl ImeContext {
             };
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        {
+            self.backend.candidate_config()
+        }
+
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             CandidateConfig::default()
         }
@@ -136,6 +173,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_commit_callback(callback),
             Backend::Tsf(b) => b.set_commit_callback(callback),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_commit_callback(callback);
     }
 
     pub fn set_preedit_callback(&mut self, callback: PreEditCallback) {
@@ -144,6 +184,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_preedit_callback(callback),
             Backend::Tsf(b) => b.set_preedit_callback(callback),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_preedit_callback(callback);
     }
 
     pub fn set_candidate_callback(&mut self, callback: CandidateCallback) {
@@ -152,6 +195,9 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_candidate_callback(callback),
             Backend::Tsf(b) => b.set_candidate_callback(callback),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_candidate_callback(callback);
     }
 
     pub fn set_input_mode_callback(&mut self, callback: InputModeCallback) {
@@ -160,5 +206,8 @@ impl ImeContext {
             Backend::Imm32(b) => b.set_input_mode_callback(callback),
             Backend::Tsf(b) => b.set_input_mode_callback(callback),
         }
+
+        #[cfg(target_os = "linux")]
+        self.backend.set_input_mode_callback(callback);
     }
 }

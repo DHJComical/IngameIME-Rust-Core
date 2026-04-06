@@ -34,6 +34,26 @@ cargo build --features jni-adapter
 cargo build --release --features jni-adapter
 ```
 
+Linux 交叉编译（Zig）：
+
+```powershell
+cargo install cargo-zigbuild --locked
+cargo zigbuild --release --target x86_64-unknown-linux-gnu --no-default-features
+```
+
+Linux 后端 feature（用于后续实现）：
+
+```powershell
+cargo build --features x11
+cargo build --features wayland
+```
+
+## CI
+
+- Windows 构建（`ingameime_core.dll` + `.pdb`）
+- 使用 Zig 的 Linux 交叉编译（`libingameime_core.so`）
+- 推送 tag 时会自动上传 release 产物。
+
 ## JNI 绑定类（启用 `jni-adapter` 时）
 
 JNI 注册目标类按以下顺序解析：

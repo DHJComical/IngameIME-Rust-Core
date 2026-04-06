@@ -28,3 +28,4 @@ target
 /windows-0.62.2
 /jni-rs
 .idea
+/x11rb-0.13.2

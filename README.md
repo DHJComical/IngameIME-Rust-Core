@@ -34,6 +34,26 @@ cargo build --features jni-adapter
 cargo build --release --features jni-adapter
 ```
 
+Linux cross-build (Zig):
+
+```powershell
+cargo install cargo-zigbuild --locked
+cargo zigbuild --release --target x86_64-unknown-linux-gnu --no-default-features
+```
+
+Linux backend feature flags (for upcoming implementation):
+
+```powershell
+cargo build --features x11
+cargo build --features wayland
+```
+
+## CI
+
+- Windows build (`ingameime_core.dll` + `.pdb`)
+- Linux cross-build via Zig (`libingameime_core.so`)
+- On tag push, release artifacts are uploaded automatically.
+
 ## JNI Bind Class (when `jni-adapter` enabled)
 
 JNI registration target class is resolved in this order:
