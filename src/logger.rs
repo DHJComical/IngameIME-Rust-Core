@@ -1,4 +1,4 @@
-﻿use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,5 +83,3 @@ fn dispatch(level: LogLevel, message: &str) {
 
     eprintln!("{prefixed}");
 }
-
-

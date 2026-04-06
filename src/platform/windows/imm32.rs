@@ -1,11 +1,10 @@
-﻿use std::ffi::c_void;
+use std::ffi::c_void;
 use std::mem::transmute;
 
-use windows::core::w;
 use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::UI::Input::Ime::{
-    CANDIDATEFORM, CANDIDATELIST, CFS_EXCLUDE, CFS_RECT, COMPOSITIONFORM, CPS_CANCEL,
-    GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, HIMC, IME_CMODE_NATIVE, IME_COMPOSITION_STRING,
+    CANDIDATEFORM, CANDIDATELIST, CFS_EXCLUDE, CFS_RECT, COMPOSITIONFORM, CPS_CANCEL, GCS_COMPSTR,
+    GCS_CURSORPOS, GCS_RESULTSTR, HIMC, IME_CMODE_NATIVE, IME_COMPOSITION_STRING,
     IME_CONVERSION_MODE, IME_SENTENCE_MODE, IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE,
     IMN_OPENCANDIDATE, IMN_SETCONVERSIONMODE, ISC_SHOWUICANDIDATEWINDOW,
     ISC_SHOWUICOMPOSITIONWINDOW, ImmAssociateContext, ImmCreateContext, ImmDestroyContext,
@@ -18,8 +17,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowLongPtrW, WM_IME_CHAR, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY,
     WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUTLANGCHANGE, WNDPROC,
 };
+use windows::core::w;
 
-use crate::callbacks::{CallbackStore, CandidateCallback, CommitCallback, InputModeCallback, PreEditCallback};
+use crate::callbacks::{
+    CallbackStore, CandidateCallback, CommitCallback, InputModeCallback, PreEditCallback,
+};
 use crate::logger;
 use crate::model::{CandidateConfig, InputMode};
 
@@ -243,12 +245,7 @@ impl Imm32Backend {
         self.callbacks.set_input_mode(callback);
     }
 
-    fn handle_window_message(
-        &mut self,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
+    fn handle_window_message(&mut self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         match msg {
             WM_INPUTLANGCHANGE => {
                 self.callbacks.emit_input_mode(self.input_mode());
@@ -417,12 +414,9 @@ impl Imm32Backend {
             let mut offsets = Vec::with_capacity(count);
             for i in 0..count {
                 let at = offset_table_base + i * 4;
-                let offset = u32::from_le_bytes([
-                    bytes[at],
-                    bytes[at + 1],
-                    bytes[at + 2],
-                    bytes[at + 3],
-                ]) as usize;
+                let offset =
+                    u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
+                        as usize;
                 offsets.push(offset);
             }
 
@@ -495,4 +489,3 @@ fn utf16_bytes_to_string(bytes: &[u8]) -> String {
     }
     String::from_utf16_lossy(&units)
 }
-

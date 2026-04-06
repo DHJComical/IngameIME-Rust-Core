@@ -1,4 +1,4 @@
-﻿use crate::callbacks::{CandidateCallback, CommitCallback, InputModeCallback, PreEditCallback};
+use crate::callbacks::{CandidateCallback, CommitCallback, InputModeCallback, PreEditCallback};
 use crate::model::{CandidateConfig, InputMode};
 
 enum Backend {
@@ -23,7 +23,8 @@ impl ImeContext {
 
             if api == 0 {
                 crate::logger::info("Creating TSF input context");
-                if let Some(backend) = crate::platform::windows::TsInputContext::new(hwnd, ui_less) {
+                if let Some(backend) = crate::platform::windows::TsInputContext::new(hwnd, ui_less)
+                {
                     return Some(Self {
                         backend: Backend::Tsf(backend),
                     });

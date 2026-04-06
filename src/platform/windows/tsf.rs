@@ -1,4 +1,4 @@
-﻿//! TSF (Text Services Framework) implementation for IngameIME-rs
+//! TSF (Text Services Framework) implementation for IngameIME-rs
 
 #![allow(non_upper_case_globals)]
 #![allow(unused_variables)]
@@ -11,11 +11,13 @@ use std::char::decode_utf16;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
 
-use crate::callbacks::{CallbackStore, Candidate, CandidateCallback, CandidateEvent, CommitCallback, InputModeCallback as CoreInputModeCallback, PreEdit, PreEditCallback, PreEditEvent};
+use crate::callbacks::{
+    CallbackStore, Candidate, CandidateCallback, CandidateEvent, CommitCallback,
+    InputModeCallback as CoreInputModeCallback, PreEdit, PreEditCallback, PreEditEvent,
+};
 use crate::model::{CandidateConfig as CoreCandidateConfig, InputMode as CoreInputMode};
 
 use windows::{
-    core::*,
     Win32::Foundation::*,
     Win32::Graphics::Gdi::MapWindowPoints,
     Win32::System::Com::*,
@@ -23,6 +25,7 @@ use windows::{
     Win32::System::Variant::{VARIANT, VT_I4},
     Win32::UI::TextServices::*,
     Win32::UI::WindowsAndMessaging::GetWindowRect,
+    core::*,
 };
 
 // Import FreeLibrary from Windows API
@@ -1232,9 +1235,8 @@ impl TsInputContext {
                     if let Ok(store) = callbacks.lock() {
                         match event {
                             CandidateEvent::Begin => store.emit_candidate_begin(),
-                            CandidateEvent::Update(candidate) => {
-                                store.emit_candidate_update(&candidate.candidates, candidate.selected)
-                            }
+                            CandidateEvent::Update(candidate) => store
+                                .emit_candidate_update(&candidate.candidates, candidate.selected),
                             CandidateEvent::End => store.emit_candidate_end(),
                         }
                     }
@@ -1394,10 +1396,7 @@ impl InputContext for TsInputContext {
             if !(*self.inner).activated {
                 return;
             }
-            (*self.inner)
-                .input_mode_handler
-                .get()
-                .force_alpha_mode();
+            (*self.inner).input_mode_handler.get().force_alpha_mode();
         }
     }
 
@@ -1406,10 +1405,7 @@ impl InputContext for TsInputContext {
             if !(*self.inner).activated {
                 return;
             }
-            (*self.inner)
-                .input_mode_handler
-                .get()
-                .force_native_mode();
+            (*self.inner).input_mode_handler.get().force_native_mode();
         }
     }
 
@@ -1500,4 +1496,3 @@ impl Drop for TsInputContext {
         log_info("TsInputContext dropped");
     }
 }
-

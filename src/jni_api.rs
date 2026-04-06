@@ -1,21 +1,19 @@
-﻿#![allow(non_snake_case)]
+#![allow(non_snake_case)]
 
 use std::ffi::c_void;
 
 use jni::errors::{Error, JniError};
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::strings::{JNIStr, JNIString};
-use jni::sys::{
-    JavaVM as RawJavaVM, JNI_ERR, JNI_FALSE, JNI_TRUE, jboolean, jint, jlong, jstring,
-};
+use jni::sys::{JNI_ERR, JNI_FALSE, JNI_TRUE, JavaVM as RawJavaVM, jboolean, jint, jlong, jstring};
 use jni::vm::JavaVM;
 use jni::{Env, EnvUnowned, NativeMethod, jni_sig, jni_str};
 
 use crate::callbacks::{CandidateEvent, PreEditEvent};
 use crate::context::ImeContext;
+use crate::jvm;
 use crate::logger::{self, LogLevel};
 use crate::model::{CandidateConfig, InputMode};
-use crate::jvm;
 
 const BIND_CLASS_PROPERTY: &str = "ingameime.jni.bind_class";
 
@@ -161,8 +159,10 @@ fn register_native_methods(env: &mut Env<'_>) -> Result<(), jni::errors::Error> 
         ),
     ];
 
-    let methods: Vec<NativeMethod<'_>> =
-        methods_owned.iter().map(NativeMethodOwned::as_native_method).collect();
+    let methods: Vec<NativeMethod<'_>> = methods_owned
+        .iter()
+        .map(NativeMethodOwned::as_native_method)
+        .collect();
 
     let callback_owner_jni = JNIString::new(&callback_owner);
     unsafe {
@@ -351,11 +351,7 @@ extern "system" fn rust_set_max_candidates(
     context.set_candidate_config(config);
 }
 
-extern "system" fn rust_get_max_candidates(
-    _env: EnvUnowned,
-    _class: JClass,
-    ptr: jlong,
-) -> jint {
+extern "system" fn rust_get_max_candidates(_env: EnvUnowned, _class: JClass, ptr: jlong) -> jint {
     let Some(context) = context_ref(ptr) else {
         return CandidateConfig::default().max_candidates as jint;
     };
@@ -618,5 +614,3 @@ fn context_mut<'a>(ptr: jlong) -> Option<&'a mut ImeContext> {
     }
     Some(unsafe { &mut *(ptr as *mut ImeContext) })
 }
-
-
