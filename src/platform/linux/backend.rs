@@ -208,6 +208,7 @@ impl LinuxBackend {
             Self::Wayland(backend) => backend.name(),
             #[cfg(feature = "x11")]
             Self::X11(backend) => backend.name(),
+            _ => "linux",
         }
     }
 
