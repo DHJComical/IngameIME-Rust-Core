@@ -9,7 +9,7 @@ use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
     ChangeWindowAttributesAux, ConnectionExt as _, EventMask, KeyButMask, KeyPressEvent,
 };
-use xkbcommon::xkb;
+use xkeysym::Keysym;
 
 pub(super) struct X11Backend {
     stop: Arc<AtomicBool>,
@@ -154,6 +154,5 @@ fn translate_keypress(
         return None;
     }
 
-    let text = xkb::keysym_to_utf8(xkb::Keysym::new(keysym));
-    if text.is_empty() { None } else { Some(text) }
+    Some(Keysym::new(keysym).key_char()?.to_string())
 }

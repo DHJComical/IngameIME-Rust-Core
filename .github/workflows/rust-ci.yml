@@ -64,7 +64,7 @@ jobs:
             target/release/ingameime_core.pdb
           if-no-files-found: warn
 
-  build-linux:
+  build-linux-x11:
     runs-on: ubuntu-latest
     needs: check
     steps:
@@ -82,20 +82,55 @@ jobs:
       - name: Install cargo-zigbuild
         run: cargo install cargo-zigbuild --locked
 
-      - name: Build release Linux SO
-        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features x11,wayland
+      - name: Build release Linux SO (X11)
+        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features x11
 
-      - name: Upload Linux artifact
+      - name: Rename Linux artifact (X11)
+        run: cp target/x86_64-unknown-linux-gnu/release/libingameime_core.so target/x86_64-unknown-linux-gnu/release/libingameime_core_x11.so
+
+      - name: Upload Linux artifact (X11)
         uses: actions/upload-artifact@v4
         with:
-          name: ingameime_core-linux-x64
+          name: ingameime_core-linux-x11-x64
           path: |
-            target/x86_64-unknown-linux-gnu/release/libingameime_core.so
+            target/x86_64-unknown-linux-gnu/release/libingameime_core_x11.so
+          if-no-files-found: warn
+
+  build-linux-wayland:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Build release Linux SO (Wayland)
+        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features wayland
+
+      - name: Rename Linux artifact (Wayland)
+        run: cp target/x86_64-unknown-linux-gnu/release/libingameime_core.so target/x86_64-unknown-linux-gnu/release/libingameime_core_wayland.so
+
+      - name: Upload Linux artifact (Wayland)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingameime_core-linux-wayland-x64
+          path: |
+            target/x86_64-unknown-linux-gnu/release/libingameime_core_wayland.so
           if-no-files-found: warn
 
   release:
     runs-on: windows-latest
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux-x11, build-linux-wayland]
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
@@ -106,10 +141,16 @@ jobs:
           name: ingameime_core-windows-x64
           path: dist
 
-      - name: Download Linux artifact
+      - name: Download Linux X11 artifact
         uses: actions/download-artifact@v4
         with:
-          name: ingameime_core-linux-x64
+          name: ingameime_core-linux-x11-x64
+          path: dist
+
+      - name: Download Linux Wayland artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ingameime_core-linux-wayland-x64
           path: dist
 
       - name: Create GitHub Release
@@ -119,4 +160,5 @@ jobs:
           files: |
             dist/ingameime_core.dll
             dist/ingameime_core.pdb
-            dist/libingameime_core.so
+            dist/libingameime_core_x11.so
+            dist/libingameime_core_wayland.so

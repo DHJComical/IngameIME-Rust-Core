@@ -12,7 +12,7 @@ jni-adapter = ["dep:jni", "dep:jni-sys"]
 x11 = [
     "dep:raw-window-handle",
     "dep:x11rb",
-    "dep:xkbcommon",
+    "dep:xkeysym",
 ]
 wayland = [
     "dep:raw-window-handle",
@@ -27,7 +27,7 @@ raw-window-handle = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", default-features = false, features = ["xkb"], optional = true }
-xkbcommon = { version = "0.9.0", features = ["x11"], optional = true }
+xkeysym = { version = "0.2", optional = true }
 wayland-client = { version = "0.31", optional = true }
 wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"], optional = true }
 

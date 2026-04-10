@@ -203,24 +203,54 @@ impl LinuxBackend {
     }
 
     fn name(&self) -> &'static str {
+        #[cfg(all(feature = "wayland", feature = "x11"))]
         match self {
-            #[cfg(feature = "wayland")]
             Self::Wayland(backend) => backend.name(),
-            #[cfg(feature = "x11")]
             Self::X11(backend) => backend.name(),
-            _ => "linux",
+        }
+
+        #[cfg(all(feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            return backend.name();
+        }
+
+        #[cfg(all(feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            return backend.name();
+        }
+
+        #[cfg(not(any(feature = "wayland", feature = "x11")))]
+        {
+            let _ = self;
+            "linux"
         }
     }
 
     fn poll_events(&mut self, out: &mut Vec<EngineEvent>) {
+        #[cfg(all(feature = "wayland", feature = "x11"))]
         match self {
-            #[cfg(feature = "wayland")]
             Self::Wayland(backend) => backend.poll_events(out),
-            #[cfg(feature = "x11")]
             Self::X11(backend) => backend.poll_events(out),
-            _ => {
-                let _ = out;
-            }
+        }
+
+        #[cfg(all(feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            backend.poll_events(out);
+        }
+
+        #[cfg(all(feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            backend.poll_events(out);
+        }
+
+        #[cfg(not(any(feature = "wayland", feature = "x11")))]
+        {
+            let _ = self;
+            let _ = out;
         }
     }
 }
