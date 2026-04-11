@@ -83,7 +83,7 @@ jobs:
         run: cargo install cargo-zigbuild --locked
 
       - name: Build release Linux SO (X11)
-        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features x11
+        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features jni-adapter,x11
 
       - name: Rename Linux artifact (X11)
         run: cp target/x86_64-unknown-linux-gnu/release/libingameime_core.so target/x86_64-unknown-linux-gnu/release/libingameime_core_x11.so
@@ -115,7 +115,7 @@ jobs:
         run: cargo install cargo-zigbuild --locked
 
       - name: Build release Linux SO (Wayland)
-        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features wayland
+        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu --features jni-adapter,wayland
 
       - name: Rename Linux artifact (Wayland)
         run: cp target/x86_64-unknown-linux-gnu/release/libingameime_core.so target/x86_64-unknown-linux-gnu/release/libingameime_core_wayland.so
