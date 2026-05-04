@@ -9,12 +9,19 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 jni-adapter = ["dep:jni", "dep:jni-sys"]
+ibus = [
+    "dep:async-io",
+    "dep:futures-lite",
+    "dep:zbus",
+]
 x11 = [
+    "ibus",
     "dep:raw-window-handle",
     "dep:x11rb",
     "dep:xkeysym",
 ]
 wayland = [
+    "ibus",
     "dep:raw-window-handle",
     "dep:wayland-client",
     "dep:wayland-protocols",
@@ -26,10 +33,13 @@ jni-sys = { version = "0.4", optional = true }
 raw-window-handle = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+async-io = { version = "2", optional = true }
+futures-lite = { version = "2", optional = true }
 x11rb = { version = "0.13", default-features = false, features = ["xkb"], optional = true }
 xkeysym = { version = "0.2", optional = true }
 wayland-client = { version = "0.31", optional = true }
 wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"], optional = true }
+zbus = { version = "5.14", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-core = "0.62.2"

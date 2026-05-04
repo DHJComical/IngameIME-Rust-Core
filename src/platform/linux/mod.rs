@@ -1,4 +1,6 @@
 mod backend;
+#[cfg(feature = "ibus")]
+mod ibus;
 #[cfg(feature = "wayland")]
 mod wayland;
 #[cfg(feature = "x11")]

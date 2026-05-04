@@ -49,6 +49,7 @@ impl LinuxInputContext {
 
     pub fn set_activated(&mut self, activated: bool) {
         self.pump_backend_events();
+        self.backend.set_activated(activated);
         self.activated = activated;
         if !activated {
             self.callbacks.emit_preedit_end();
@@ -66,12 +67,14 @@ impl LinuxInputContext {
 
     pub fn force_alpha_mode(&mut self) {
         self.pump_backend_events();
+        self.backend.force_alpha_mode();
         self.input_mode = InputMode::Alpha;
         self.callbacks.emit_input_mode(self.input_mode);
     }
 
     pub fn force_native_mode(&mut self) {
         self.pump_backend_events();
+        self.backend.force_native_mode();
         self.input_mode = InputMode::Native;
         self.callbacks.emit_input_mode(self.input_mode);
     }
@@ -79,6 +82,7 @@ impl LinuxInputContext {
     pub fn set_preedit_rect(&mut self, x: i32, y: i32, width: i32, height: i32) {
         self.pump_backend_events();
         self.preedit_rect = (x, y, width, height);
+        self.backend.set_preedit_rect(x, y, width, height);
     }
 
     pub fn set_candidate_config(&mut self, config: CandidateConfig) {
@@ -109,6 +113,18 @@ impl LinuxInputContext {
         self.pump_backend_events();
         self.callbacks.set_input_mode(callback);
         self.callbacks.emit_input_mode(self.input_mode);
+    }
+
+    pub fn process_key_event(
+        &mut self,
+        keyval: u32,
+        keycode: u32,
+        state: u32,
+        is_release: bool,
+    ) -> bool {
+        self.pump_backend_events();
+        self.backend
+            .process_key_event(keyval, keycode, state, is_release)
     }
 
     fn pump_backend_events(&mut self) {
@@ -151,6 +167,11 @@ impl LinuxInputContext {
                 selected,
             } => {
                 if self.activated {
+                    let candidates = candidates
+                        .into_iter()
+                        .take(self.candidate_config.max_candidates)
+                        .collect::<Vec<_>>();
+                    let selected = selected.min(candidates.len().saturating_sub(1));
                     self.callbacks.emit_candidate_update(&candidates, selected);
                 }
             }
@@ -177,6 +198,8 @@ impl Drop for LinuxInputContext {
 }
 
 enum LinuxBackend {
+    #[cfg(feature = "ibus")]
+    Ibus(super::ibus::IbusBackend),
     #[cfg(feature = "wayland")]
     Wayland(super::wayland::WaylandBackend),
     #[cfg(feature = "x11")]
@@ -187,6 +210,11 @@ impl LinuxBackend {
     fn connect(hwnd: isize) -> Option<Self> {
         #[cfg(not(feature = "x11"))]
         let _ = hwnd;
+
+        #[cfg(feature = "ibus")]
+        if let Some(backend) = super::ibus::IbusBackend::connect() {
+            return Some(Self::Ibus(backend));
+        }
 
         #[cfg(feature = "wayland")]
         if let Some(backend) = super::wayland::WaylandBackend::connect() {
@@ -203,25 +231,34 @@ impl LinuxBackend {
     }
 
     fn name(&self) -> &'static str {
-        #[cfg(all(feature = "wayland", feature = "x11"))]
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.name(),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.name(),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.name(),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
         match self {
             Self::Wayland(backend) => backend.name(),
             Self::X11(backend) => backend.name(),
         }
 
-        #[cfg(all(feature = "wayland", not(feature = "x11")))]
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
         {
             let Self::Wayland(backend) = self;
             return backend.name();
         }
 
-        #[cfg(all(feature = "x11", not(feature = "wayland")))]
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
         {
             let Self::X11(backend) = self;
             return backend.name();
         }
 
-        #[cfg(not(any(feature = "wayland", feature = "x11")))]
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
         {
             let _ = self;
             "linux"
@@ -229,28 +266,214 @@ impl LinuxBackend {
     }
 
     fn poll_events(&mut self, out: &mut Vec<EngineEvent>) {
-        #[cfg(all(feature = "wayland", feature = "x11"))]
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.poll_events(out),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.poll_events(out),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.poll_events(out),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
         match self {
             Self::Wayland(backend) => backend.poll_events(out),
             Self::X11(backend) => backend.poll_events(out),
         }
 
-        #[cfg(all(feature = "wayland", not(feature = "x11")))]
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
         {
             let Self::Wayland(backend) = self;
             backend.poll_events(out);
         }
 
-        #[cfg(all(feature = "x11", not(feature = "wayland")))]
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
         {
             let Self::X11(backend) = self;
             backend.poll_events(out);
         }
 
-        #[cfg(not(any(feature = "wayland", feature = "x11")))]
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
         {
             let _ = self;
             let _ = out;
+        }
+    }
+
+    fn set_activated(&mut self, activated: bool) {
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.set_activated(activated),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.set_activated(activated),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.set_activated(activated),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
+        match self {
+            Self::Wayland(backend) => backend.set_activated(activated),
+            Self::X11(backend) => backend.set_activated(activated),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            backend.set_activated(activated);
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            backend.set_activated(activated);
+        }
+
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
+        {
+            let _ = (self, activated);
+        }
+    }
+
+    fn set_preedit_rect(&mut self, x: i32, y: i32, width: i32, height: i32) {
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.set_preedit_rect(x, y, width, height),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.set_preedit_rect(x, y, width, height),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.set_preedit_rect(x, y, width, height),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
+        match self {
+            Self::Wayland(backend) => backend.set_preedit_rect(x, y, width, height),
+            Self::X11(backend) => backend.set_preedit_rect(x, y, width, height),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            backend.set_preedit_rect(x, y, width, height);
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            backend.set_preedit_rect(x, y, width, height);
+        }
+
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
+        {
+            let _ = (self, x, y, width, height);
+        }
+    }
+
+    fn force_alpha_mode(&mut self) {
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.force_alpha_mode(),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.force_alpha_mode(),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.force_alpha_mode(),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
+        match self {
+            Self::Wayland(backend) => backend.force_alpha_mode(),
+            Self::X11(backend) => backend.force_alpha_mode(),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            backend.force_alpha_mode();
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            backend.force_alpha_mode();
+        }
+
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
+        {
+            let _ = self;
+        }
+    }
+
+    fn force_native_mode(&mut self) {
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.force_native_mode(),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.force_native_mode(),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.force_native_mode(),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
+        match self {
+            Self::Wayland(backend) => backend.force_native_mode(),
+            Self::X11(backend) => backend.force_native_mode(),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            backend.force_native_mode();
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            backend.force_native_mode();
+        }
+
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
+        {
+            let _ = self;
+        }
+    }
+
+    fn process_key_event(
+        &mut self,
+        keyval: u32,
+        keycode: u32,
+        state: u32,
+        is_release: bool,
+    ) -> bool {
+        #[cfg(feature = "ibus")]
+        match self {
+            Self::Ibus(backend) => backend.process_key_event(keyval, keycode, state, is_release),
+            #[cfg(feature = "wayland")]
+            Self::Wayland(backend) => backend.process_key_event(keyval, keycode, state, is_release),
+            #[cfg(feature = "x11")]
+            Self::X11(backend) => backend.process_key_event(keyval, keycode, state, is_release),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", feature = "x11"))]
+        match self {
+            Self::Wayland(backend) => backend.process_key_event(keyval, keycode, state, is_release),
+            Self::X11(backend) => backend.process_key_event(keyval, keycode, state, is_release),
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "wayland", not(feature = "x11")))]
+        {
+            let Self::Wayland(backend) = self;
+            return backend.process_key_event(keyval, keycode, state, is_release);
+        }
+
+        #[cfg(all(not(feature = "ibus"), feature = "x11", not(feature = "wayland")))]
+        {
+            let Self::X11(backend) = self;
+            return backend.process_key_event(keyval, keycode, state, is_release);
+        }
+
+        #[cfg(not(any(feature = "ibus", feature = "wayland", feature = "x11")))]
+        {
+            let _ = (self, keyval, keycode, state, is_release);
+            false
         }
     }
 }
