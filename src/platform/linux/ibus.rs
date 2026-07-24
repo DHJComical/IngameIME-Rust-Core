@@ -460,9 +460,11 @@ fn worker_main(
         let _ = ready_tx.send(Ok(()));
 
         loop {
+            let mut had_command = false;
             loop {
                 match command_rx.try_recv() {
                     Ok(command) => {
+                        had_command = true;
                         if !state.handle_command(command, &event_tx).await {
                             return;
                         }
@@ -470,6 +472,20 @@ fn worker_main(
                     Err(mpsc::TryRecvError::Empty) => break,
                     Err(mpsc::TryRecvError::Disconnected) => return,
                 }
+            }
+
+            let mut had_signal = false;
+            while let Some(next) = future::poll_once(signals.next()).await {
+                let Some(message) = next else {
+                    crate::logger::warn("IBus signal stream closed; stopping worker");
+                    return;
+                };
+                had_signal = true;
+                state.handle_signal(message, &event_tx);
+            }
+
+            if had_command || had_signal {
+                continue;
             }
 
             let next_signal = future::race(async { signals.next().await }, async {
