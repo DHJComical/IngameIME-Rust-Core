@@ -967,6 +967,59 @@ pub struct TsInputContextInner {
 }
 
 // ============================================================================
+// TsfInitGuard - cleanup for TsInputContext::new failure paths
+// ============================================================================
+
+/// RAII guard covering the failure paths of `TsInputContext::new`.
+///
+/// Unless `dismiss`ed, dropping the guard deactivates the thread manager (once
+/// a client id has been activated) and then frees msctf.dll, so no failure
+/// path after `LoadLibraryW` leaks the activated thread manager or the DLL
+/// reference. The order matters: `Deactivate` calls into msctf.dll and must
+/// run before `FreeLibrary`.
+///
+/// The success path must `dismiss()` the guard: msctf.dll has to stay loaded
+/// for the lifetime of the context, and the thread manager is deactivated in
+/// `TsInputContext::drop` instead.
+struct TsfInitGuard {
+    h_msctf: HMODULE,
+    thread_mgr: Option<ITfThreadMgr>,
+    client_id: Option<u32>,
+    dismissed: bool,
+}
+
+impl TsfInitGuard {
+    fn new(h_msctf: HMODULE) -> Self {
+        Self {
+            h_msctf,
+            thread_mgr: None,
+            client_id: None,
+            dismissed: false,
+        }
+    }
+
+    fn dismiss(mut self) {
+        self.dismissed = true;
+    }
+}
+
+impl Drop for TsfInitGuard {
+    fn drop(&mut self) {
+        if self.dismissed {
+            return;
+        }
+        unsafe {
+            if let (Some(thread_mgr), Some(_)) = (&self.thread_mgr, self.client_id) {
+                if let Err(e) = thread_mgr.Deactivate() {
+                    log_warn(&format!("TsfInitGuard: Deactivate failed: {:?}", e));
+                }
+            }
+            let _ = FreeLibrary(self.h_msctf);
+        }
+    }
+}
+
+// ============================================================================
 // TsInputContext
 // ============================================================================
 
@@ -1018,13 +1071,16 @@ impl TsInputContext {
                 return None;
             }
             let h_msctf = h_msctf.unwrap();
+            // From here on every failure path cleans up through this guard:
+            // it frees msctf.dll, and deactivates the thread manager as well
+            // once activation has succeeded below.
+            let mut init_guard = TsfInitGuard::new(h_msctf);
 
             // Get TF_CreateThreadMgr function
             log_debug("Getting TF_CreateThreadMgr function");
             let proc_addr = GetProcAddress(h_msctf, PCSTR("TF_CreateThreadMgr\0".as_ptr()));
             if proc_addr.is_none() {
                 log_error("Failed to get TF_CreateThreadMgr function address");
-                let _ = FreeLibrary(h_msctf);
                 return None;
             }
             let create_thread_mgr: TfCreateThreadMgr = std::mem::transmute(proc_addr.unwrap());
@@ -1035,12 +1091,12 @@ impl TsInputContext {
             let hr = create_thread_mgr(&mut thread_mgr_ptr);
             if hr.is_err() || thread_mgr_ptr.is_null() {
                 log_error(&format!("Failed to create thread manager: {}", hr));
-                let _ = FreeLibrary(h_msctf);
                 return None;
             }
 
             // Use from_raw for safe conversion
             let thread_mgr: ITfThreadMgr = Interface::from_raw(thread_mgr_ptr);
+            init_guard.thread_mgr = Some(thread_mgr.clone());
 
             // Get ITfThreadMgrEx for activation
             log_debug("Activating thread manager");
@@ -1075,6 +1131,9 @@ impl TsInputContext {
                 ));
                 return None;
             }
+            // The thread manager is now activated; the guard must deactivate
+            // it on every failure path from here on.
+            init_guard.client_id = Some(client_id);
 
             log_debug("Creating document managers");
             let doc_mgr = match thread_mgr.CreateDocumentMgr() {
@@ -1268,6 +1327,10 @@ impl TsInputContext {
             (*inner_ptr).input_source_cb = Some(Box::new(|_| {}));
 
             log_info("TsInputContext created successfully");
+
+            // Success: msctf.dll must stay loaded and the thread manager stays
+            // activated; both are released in `TsInputContext::drop`.
+            init_guard.dismiss();
 
             Some(Box::new(TsInputContext {
                 inner: inner_ptr,
