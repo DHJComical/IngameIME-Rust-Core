@@ -5,6 +5,8 @@ pub mod model;
 mod platform;
 
 #[cfg(feature = "jni-adapter")]
+mod handle;
+#[cfg(feature = "jni-adapter")]
 mod jni_api;
 #[cfg(feature = "jni-adapter")]
 mod jvm;

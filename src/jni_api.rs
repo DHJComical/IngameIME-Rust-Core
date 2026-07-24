@@ -11,6 +11,7 @@ use jni::{Env, EnvUnowned, NativeMethod, jni_sig, jni_str};
 
 use crate::callbacks::{CandidateEvent, PreEditEvent};
 use crate::context::ImeContext;
+use crate::handle;
 use crate::jvm;
 use crate::logger::{self, LogLevel};
 use crate::model::{CandidateConfig, InputMode};
@@ -243,16 +244,16 @@ extern "system" fn rust_create_input_context_win32(
 ) -> jlong {
     let ui_less = ui_less != JNI_FALSE;
     match ImeContext::create(hwnd as isize, api, ui_less) {
-        Some(context) => Box::into_raw(Box::new(context)) as jlong,
-        None => 0,
+        Some(context) => handle::insert(context) as jlong,
+        None => handle::INVALID_HANDLE as jlong,
     }
 }
 
 extern "system" fn rust_destroy_input_context(_env: EnvUnowned, _class: JClass, ptr: jlong) {
-    if ptr != 0 {
-        unsafe {
-            let _ = Box::from_raw(ptr as *mut ImeContext);
-        }
+    if !handle::remove(ptr as u64) {
+        logger::warn(&format!(
+            "Ignoring destroy for unknown or already-destroyed handle: {ptr}"
+        ));
     }
 }
 
@@ -262,10 +263,9 @@ extern "system" fn rust_set_input_context_activated(
     ptr: jlong,
     activated: jboolean,
 ) {
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-    context.set_activated(activated != JNI_FALSE);
+    handle::with_context(ptr as u64, |context| {
+        context.set_activated(activated != JNI_FALSE);
+    });
 }
 
 extern "system" fn rust_is_input_context_activated(
@@ -273,11 +273,8 @@ extern "system" fn rust_is_input_context_activated(
     _class: JClass,
     ptr: jlong,
 ) -> jboolean {
-    let Some(context) = context_ref(ptr) else {
-        return JNI_FALSE;
-    };
-
-    if context.is_activated() {
+    let activated = handle::with_context(ptr as u64, |context| context.is_activated());
+    if activated == Some(true) {
         JNI_TRUE
     } else {
         JNI_FALSE
@@ -290,29 +287,24 @@ extern "system" fn rust_get_input_mode(
     ptr: jlong,
     _legacy_mode: jint,
 ) -> jint {
-    let Some(context) = context_ref(ptr) else {
-        return 2;
-    };
-
-    match context.get_input_mode() {
+    handle::with_context(ptr as u64, |context| match context.get_input_mode() {
         InputMode::Alpha => 0,
         InputMode::Native => 1,
         InputMode::Unsupported => 2,
-    }
+    })
+    .unwrap_or(2)
 }
 
 extern "system" fn rust_force_alpha_mode(_env: EnvUnowned, _class: JClass, ptr: jlong) {
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-    context.force_alpha_mode();
+    handle::with_context(ptr as u64, |context| {
+        context.force_alpha_mode();
+    });
 }
 
 extern "system" fn rust_force_native_mode(_env: EnvUnowned, _class: JClass, ptr: jlong) {
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-    context.force_native_mode();
+    handle::with_context(ptr as u64, |context| {
+        context.force_native_mode();
+    });
 }
 
 extern "system" fn rust_process_key_event(
@@ -331,29 +323,29 @@ extern "system" fn rust_process_key_event(
         return JNI_FALSE;
     }
 
-    let Some(context) = context_mut(ptr) else {
-        logger::error("Cannot process Linux key event without an input context");
-        return JNI_FALSE;
-    };
+    let handled = handle::with_context(ptr as u64, |context| {
+        context.process_key_event(
+            keyval as u32,
+            keycode as u32,
+            state as u32,
+            is_release != JNI_FALSE,
+        )
+    });
 
-    if context.process_key_event(
-        keyval as u32,
-        keycode as u32,
-        state as u32,
-        is_release != JNI_FALSE,
-    ) {
-        JNI_TRUE
-    } else {
-        JNI_FALSE
+    match handled {
+        Some(true) => JNI_TRUE,
+        Some(false) => JNI_FALSE,
+        None => {
+            logger::error("Cannot process Linux key event without an input context");
+            JNI_FALSE
+        }
     }
 }
 
 extern "system" fn rust_poll_events(_env: EnvUnowned, _class: JClass, ptr: jlong) {
-    let Some(context) = context_mut(ptr) else {
+    if handle::with_context(ptr as u64, |context| context.poll_events()).is_none() {
         logger::error("Cannot poll events without an input context");
-        return;
-    };
-    context.poll_events();
+    }
 }
 
 extern "system" fn rust_set_pre_edit_rect(
@@ -365,10 +357,9 @@ extern "system" fn rust_set_pre_edit_rect(
     width: jint,
     height: jint,
 ) {
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-    context.set_preedit_rect(x, y, width, height);
+    handle::with_context(ptr as u64, |context| {
+        context.set_preedit_rect(x, y, width, height);
+    });
 }
 
 extern "system" fn rust_get_version(mut env: EnvUnowned, _class: JClass) -> jstring {
@@ -388,10 +379,6 @@ extern "system" fn rust_set_max_candidates(
     ptr: jlong,
     max_candidates: jint,
 ) {
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-
     let config = CandidateConfig {
         max_candidates: if max_candidates > 0 {
             max_candidates as usize
@@ -399,14 +386,16 @@ extern "system" fn rust_set_max_candidates(
             CandidateConfig::default().max_candidates
         },
     };
-    context.set_candidate_config(config);
+    handle::with_context(ptr as u64, |context| {
+        context.set_candidate_config(config);
+    });
 }
 
 extern "system" fn rust_get_max_candidates(_env: EnvUnowned, _class: JClass, ptr: jlong) -> jint {
-    let Some(context) = context_ref(ptr) else {
-        return CandidateConfig::default().max_candidates as jint;
-    };
-    context.candidate_config().max_candidates as jint
+    handle::with_context(ptr as u64, |context| {
+        context.candidate_config().max_candidates as jint
+    })
+    .unwrap_or_else(|| CandidateConfig::default().max_candidates as jint)
 }
 
 extern "system" fn rust_set_debug_logging(_env: EnvUnowned, _class: JClass, enabled: jboolean) {
@@ -461,13 +450,9 @@ extern "system" fn rust_set_commit_callback(
         return;
     }
 
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        context.set_commit_callback(Box::new(move |text: String| {
+        let cb = Box::new(move |text: String| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 let jtext = env.new_string(&text)?;
                 let jtext_obj = JObject::from(jtext);
@@ -479,7 +464,8 @@ extern "system" fn rust_set_commit_callback(
                 )?;
                 Ok(())
             });
-        }));
+        });
+        handle::with_context(ptr as u64, |context| context.set_commit_callback(cb));
         Ok(())
     })
     .resolve::<jni::errors::LogErrorAndDefault>();
@@ -495,13 +481,9 @@ extern "system" fn rust_set_pre_edit_callback(
         return;
     }
 
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        context.set_preedit_callback(Box::new(move |event: PreEditEvent| {
+        let cb = Box::new(move |event: PreEditEvent| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 match &event {
                     PreEditEvent::Begin => {
@@ -539,7 +521,8 @@ extern "system" fn rust_set_pre_edit_callback(
                 }
                 Ok(())
             });
-        }));
+        });
+        handle::with_context(ptr as u64, |context| context.set_preedit_callback(cb));
         Ok(())
     })
     .resolve::<jni::errors::LogErrorAndDefault>();
@@ -555,13 +538,9 @@ extern "system" fn rust_set_candidate_list_callback(
         return;
     }
 
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        context.set_candidate_callback(Box::new(move |event: CandidateEvent| {
+        let cb = Box::new(move |event: CandidateEvent| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 match &event {
                     CandidateEvent::Begin => {
@@ -609,7 +588,8 @@ extern "system" fn rust_set_candidate_list_callback(
                 }
                 Ok(())
             });
-        }));
+        });
+        handle::with_context(ptr as u64, |context| context.set_candidate_callback(cb));
         Ok(())
     })
     .resolve::<jni::errors::LogErrorAndDefault>();
@@ -625,13 +605,9 @@ extern "system" fn rust_set_input_mode_callback(
         return;
     }
 
-    let Some(context) = context_mut(ptr) else {
-        return;
-    };
-
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        context.set_input_mode_callback(Box::new(move |mode: InputMode| {
+        let cb = Box::new(move |mode: InputMode| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 let mode_int: jint = match mode {
                     InputMode::Alpha => 0,
@@ -646,22 +622,9 @@ extern "system" fn rust_set_input_mode_callback(
                 )?;
                 Ok(())
             });
-        }));
+        });
+        handle::with_context(ptr as u64, |context| context.set_input_mode_callback(cb));
         Ok(())
     })
     .resolve::<jni::errors::LogErrorAndDefault>();
-}
-
-fn context_ref<'a>(ptr: jlong) -> Option<&'a ImeContext> {
-    if ptr == 0 {
-        return None;
-    }
-    Some(unsafe { &*(ptr as *const ImeContext) })
-}
-
-fn context_mut<'a>(ptr: jlong) -> Option<&'a mut ImeContext> {
-    if ptr == 0 {
-        return None;
-    }
-    Some(unsafe { &mut *(ptr as *mut ImeContext) })
 }
