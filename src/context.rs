@@ -125,6 +125,27 @@ impl ImeContext {
         self.backend.force_native_mode();
     }
 
+    pub fn process_key_event(
+        &mut self,
+        keyval: u32,
+        keycode: u32,
+        state: u32,
+        is_release: bool,
+    ) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.backend
+                .process_key_event(keyval, keycode, state, is_release)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (keyval, keycode, state, is_release);
+            crate::logger::error("Key event processing is only available on Linux");
+            false
+        }
+    }
+
     pub fn set_preedit_rect(&mut self, x: i32, y: i32, width: i32, height: i32) {
         #[cfg(windows)]
         match &mut self.backend {

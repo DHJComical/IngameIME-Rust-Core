@@ -108,6 +108,11 @@ fn register_native_methods(env: &mut Env<'_>) -> Result<(), jni::errors::Error> 
             rust_force_native_mode as *const (),
         ),
         NativeMethodOwned::new(
+            "rust_ime_library_process_key_event",
+            "(JIIIZ)Z",
+            rust_process_key_event as *const (),
+        ),
+        NativeMethodOwned::new(
             "rust_ime_library_set_pre_edit_rect",
             "(JIIII)V",
             rust_set_pre_edit_rect as *const (),
@@ -303,6 +308,39 @@ extern "system" fn rust_force_native_mode(_env: EnvUnowned, _class: JClass, ptr:
         return;
     };
     context.force_native_mode();
+}
+
+extern "system" fn rust_process_key_event(
+    _env: EnvUnowned,
+    _class: JClass,
+    ptr: jlong,
+    keyval: jint,
+    keycode: jint,
+    state: jint,
+    is_release: jboolean,
+) -> jboolean {
+    if keyval < 0 || keycode < 0 || state < 0 {
+        logger::error(&format!(
+            "Invalid Linux key event values: keyval={keyval}, keycode={keycode}, state={state}"
+        ));
+        return JNI_FALSE;
+    }
+
+    let Some(context) = context_mut(ptr) else {
+        logger::error("Cannot process Linux key event without an input context");
+        return JNI_FALSE;
+    };
+
+    if context.process_key_event(
+        keyval as u32,
+        keycode as u32,
+        state as u32,
+        is_release != JNI_FALSE,
+    ) {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
 }
 
 extern "system" fn rust_set_pre_edit_rect(
