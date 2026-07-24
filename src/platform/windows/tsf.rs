@@ -1105,10 +1105,10 @@ impl Drop for TsfInitGuard {
             return;
         }
         unsafe {
-            if let (Some(thread_mgr), Some(_)) = (&self.thread_mgr, self.client_id) {
-                if let Err(e) = thread_mgr.Deactivate() {
-                    log_warn(&format!("TsfInitGuard: Deactivate failed: {:?}", e));
-                }
+            if let (Some(thread_mgr), Some(_)) = (&self.thread_mgr, self.client_id)
+                && let Err(e) = thread_mgr.Deactivate()
+            {
+                log_warn(&format!("TsfInitGuard: Deactivate failed: {:?}", e));
             }
             let _ = FreeLibrary(self.h_msctf);
         }
