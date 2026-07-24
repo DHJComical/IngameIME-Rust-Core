@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 use std::ffi::c_void;
+use std::sync::Arc;
 
 use jni::errors::{Error, JniError};
 use jni::objects::{JClass, JObject, JString, JValue};
@@ -452,7 +453,7 @@ extern "system" fn rust_set_commit_callback(
 
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        let cb = Box::new(move |text: String| {
+        let cb = Arc::new(move |text: String| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 let jtext = env.new_string(&text)?;
                 let jtext_obj = JObject::from(jtext);
@@ -483,7 +484,7 @@ extern "system" fn rust_set_pre_edit_callback(
 
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        let cb = Box::new(move |event: PreEditEvent| {
+        let cb = Arc::new(move |event: PreEditEvent| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 match &event {
                     PreEditEvent::Begin => {
@@ -540,7 +541,7 @@ extern "system" fn rust_set_candidate_list_callback(
 
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        let cb = Box::new(move |event: CandidateEvent| {
+        let cb = Arc::new(move |event: CandidateEvent| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 match &event {
                     CandidateEvent::Begin => {
@@ -607,7 +608,7 @@ extern "system" fn rust_set_input_mode_callback(
 
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let global = env.new_global_ref(&callback)?;
-        let cb = Box::new(move |mode: InputMode| {
+        let cb = Arc::new(move |mode: InputMode| {
             jvm::with_attached_env(|env| -> Result<(), jni::errors::Error> {
                 let mode_int: jint = match mode {
                     InputMode::Alpha => 0,

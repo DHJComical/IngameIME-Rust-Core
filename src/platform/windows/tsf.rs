@@ -1205,40 +1205,49 @@ impl TsInputContext {
                 log_debug("Input mode handler initialized");
             }
 
+            // These adapter closures bridge the internal TSF events to the user
+            // callbacks stored behind `callbacks` (a Mutex). We must NEVER run a
+            // user callback while holding that lock: a re-entrant TSF event on the
+            // same thread would deadlock, and a panic inside the callback would
+            // poison the Mutex forever. So each closure locks only long enough to
+            // clone out the handler `Arc`, drops the guard, then invokes it.
+            // `unwrap_or_else(|e| e.into_inner())` recovers from a prior poisoning
+            // so callbacks keep working even after one of them panicked.
             {
                 let callbacks = Arc::clone(&callbacks);
-                (*inner_ptr).commit_cb = Some(Box::new(move |text| {
-                    if let Ok(store) = callbacks.lock() {
-                        store.emit_commit(&text);
+                (*inner_ptr).commit_cb = Some(Arc::new(move |text| {
+                    let cb = {
+                        let store = callbacks.lock().unwrap_or_else(|e| e.into_inner());
+                        store.commit_callback()
+                    };
+                    if let Some(cb) = cb {
+                        cb(text);
                     }
                 }));
             }
 
             {
                 let callbacks = Arc::clone(&callbacks);
-                (*inner_ptr).preedit_cb = Some(Box::new(move |event| {
-                    if let Ok(store) = callbacks.lock() {
-                        match event {
-                            PreEditEvent::Begin => store.emit_preedit_begin(),
-                            PreEditEvent::Update(preedit) => {
-                                store.emit_preedit_update(&preedit.text, preedit.cursor)
-                            }
-                            PreEditEvent::End => store.emit_preedit_end(),
-                        }
+                (*inner_ptr).preedit_cb = Some(Arc::new(move |event| {
+                    let cb = {
+                        let store = callbacks.lock().unwrap_or_else(|e| e.into_inner());
+                        store.preedit_callback()
+                    };
+                    if let Some(cb) = cb {
+                        cb(event);
                     }
                 }));
             }
 
             {
                 let callbacks = Arc::clone(&callbacks);
-                (*inner_ptr).candidate_cb = Some(Box::new(move |event| {
-                    if let Ok(store) = callbacks.lock() {
-                        match event {
-                            CandidateEvent::Begin => store.emit_candidate_begin(),
-                            CandidateEvent::Update(candidate) => store
-                                .emit_candidate_update(&candidate.candidates, candidate.selected),
-                            CandidateEvent::End => store.emit_candidate_end(),
-                        }
+                (*inner_ptr).candidate_cb = Some(Arc::new(move |event| {
+                    let cb = {
+                        let store = callbacks.lock().unwrap_or_else(|e| e.into_inner());
+                        store.candidate_callback()
+                    };
+                    if let Some(cb) = cb {
+                        cb(event);
                     }
                 }));
             }
@@ -1246,8 +1255,12 @@ impl TsInputContext {
             {
                 let callbacks = Arc::clone(&callbacks);
                 (*inner_ptr).input_mode_cb = Some(Box::new(move |mode| {
-                    if let Ok(store) = callbacks.lock() {
-                        store.emit_input_mode(map_core_mode(mode));
+                    let cb = {
+                        let store = callbacks.lock().unwrap_or_else(|e| e.into_inner());
+                        store.input_mode_callback()
+                    };
+                    if let Some(cb) = cb {
+                        cb(map_core_mode(mode));
                     }
                 }));
             }
