@@ -1466,6 +1466,58 @@ impl Drop for TsInputContext {
         log_info("Dropping TsInputContext");
 
         unsafe {
+            // Drain any in-flight async edit session BEFORE releasing `inner`.
+            //
+            // OnEndComposition requests an ASYNC ITfEditSession (DoEditSession) that
+            // dereferences `self.input_ctx` (this same `inner`). If we release `inner`
+            // via Box::from_raw while such a session is still queued in TSF, the later
+            // async DoEditSession would dereference freed memory (use-after-free).
+            //
+            // To prevent this we access `inner` through a borrow first (WITHOUT taking
+            // ownership), terminate any live composition, then issue a SYNCHRONOUS
+            // edit session. A sync RequestEditSession runs to completion before it
+            // returns and flushes any previously queued async sessions at the same
+            // read/write session point. Only after this drain do we take ownership
+            // and free `inner`.
+            {
+                let inner_ref = &*self.inner;
+                if let Some(ref ctx) = inner_ref.ctx {
+                    // 1. Terminate any live composition. This clears pending
+                    //    composition state (mirrors the pattern in set_activated).
+                    if let Ok(services) = ctx.cast::<ITfContextOwnerCompositionServices>() {
+                        if let Err(e) = services.TerminateComposition(None) {
+                            log_warn(&format!(
+                                "Drop: TerminateComposition failed: {:?}",
+                                e
+                            ));
+                        }
+                    }
+
+                    // 2. Synchronous flush: force any queued async edit session out
+                    //    of the TSF queue. We reuse composition_handler as the
+                    //    ITfEditSession object. Its DoEditSession still dereferences
+                    //    `inner`, but that is safe here because `inner` is not yet
+                    //    freed. Because TerminateComposition above cleared the
+                    //    composition, DoEditSession's `is_empty` check will be true
+                    //    and it will NOT re-commit, so this flush cannot duplicate a
+                    //    commit that the pending async session already performed.
+                    let edit_session: ITfEditSession =
+                        inner_ref.composition_handler.to_interface();
+                    if let Err(e) = ctx.RequestEditSession(
+                        inner_ref.client_id,
+                        &edit_session,
+                        TF_ES_SYNC | TF_ES_READWRITE,
+                    ) {
+                        log_warn(&format!(
+                            "Drop: sync flush RequestEditSession failed: {:?}",
+                            e
+                        ));
+                    }
+                }
+            }
+
+            // Now it is safe to take ownership and release `inner`: no async edit
+            // session referencing it can still be pending in the TSF queue.
             let inner = Box::from_raw(self.inner);
 
             if let Some(ref ctx) = inner.ctx {
