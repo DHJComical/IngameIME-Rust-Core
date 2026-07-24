@@ -126,6 +126,12 @@ fn clamp_caret_offset(caret_acp: i32, comp_acp_start: i32, text_len: usize) -> u
     (caret_acp - comp_acp_start).clamp(0, text_len as i32) as usize
 }
 
+/// Clamp a page-relative selection index into the candidate list
+/// (`0` for an empty list).
+fn clamp_selection_index(rel_sel: usize, candidates_len: usize) -> usize {
+    rel_sel.min(candidates_len.saturating_sub(1))
+}
+
 #[derive(Clone, Copy, Default, PartialEq)]
 pub struct PreEditRect {
     pub x: i32,
@@ -781,6 +787,13 @@ impl ITfUIElementSink_Impl for CompositionHandler_Impl {
                             }
                         }
                     }
+
+                    // Apply the configured cap, then keep the selection inside
+                    // the truncated list. The dedup below must compare the
+                    // truncated list so it matches what the callback receives.
+                    let max_candidates = (*self.input_ctx).candidate_config.max_candidates;
+                    candidates.truncate(max_candidates);
+                    let rel_sel = clamp_selection_index(rel_sel, candidates.len());
 
                     let is_changed = {
                         let last = self.last_candidates.borrow();
@@ -1718,5 +1731,20 @@ mod tests {
         assert_eq!(clamp_caret_offset(98, 100, 4), 0);
         // Empty composition text.
         assert_eq!(clamp_caret_offset(100, 100, 0), 0);
+    }
+
+    #[test]
+    fn clamp_selection_index_handles_empty_and_overflow() {
+        // Inside range: unchanged.
+        assert_eq!(clamp_selection_index(2, 9), 2);
+        // One past the last index clamps to the last index.
+        assert_eq!(clamp_selection_index(9, 9), 8);
+        assert_eq!(clamp_selection_index(usize::MAX, 3), 2);
+        // Empty list always yields 0.
+        assert_eq!(clamp_selection_index(0, 0), 0);
+        assert_eq!(clamp_selection_index(5, 0), 0);
+        // Single element.
+        assert_eq!(clamp_selection_index(0, 1), 0);
+        assert_eq!(clamp_selection_index(3, 1), 0);
     }
 }
