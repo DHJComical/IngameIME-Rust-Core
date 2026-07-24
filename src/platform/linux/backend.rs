@@ -68,15 +68,11 @@ impl LinuxInputContext {
     pub fn force_alpha_mode(&mut self) {
         self.pump_backend_events();
         self.backend.force_alpha_mode();
-        self.input_mode = InputMode::Alpha;
-        self.callbacks.emit_input_mode(self.input_mode);
     }
 
     pub fn force_native_mode(&mut self) {
         self.pump_backend_events();
         self.backend.force_native_mode();
-        self.input_mode = InputMode::Native;
-        self.callbacks.emit_input_mode(self.input_mode);
     }
 
     pub fn set_preedit_rect(&mut self, x: i32, y: i32, width: i32, height: i32) {
@@ -185,8 +181,10 @@ impl LinuxInputContext {
                 }
             }
             EngineEvent::InputMode(mode) => {
-                self.input_mode = mode;
-                self.callbacks.emit_input_mode(mode);
+                if mode != self.input_mode {
+                    self.input_mode = mode;
+                    self.callbacks.emit_input_mode(mode);
+                }
             }
         }
     }
