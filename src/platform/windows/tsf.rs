@@ -9,6 +9,7 @@
 use std::cell::RefCell;
 use std::char::decode_utf16;
 use std::ffi::c_void;
+use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
 use crate::callbacks::{
@@ -117,6 +118,12 @@ fn to_utf8(wide: &[u16]) -> String {
     decode_utf16(wide.iter().copied())
         .map(|r| r.unwrap_or('\u{FFFD}'))
         .collect()
+}
+
+/// UTF-16 code-unit offset of `caret_acp` relative to `comp_acp_start`,
+/// clamped into `0..=text_len`.
+fn clamp_caret_offset(caret_acp: i32, comp_acp_start: i32, text_len: usize) -> usize {
+    (caret_acp - comp_acp_start).clamp(0, text_len as i32) as usize
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -338,6 +345,70 @@ impl CompositionHandler {
         }
     }
 
+    /// Caret position as a UTF-16 code-unit offset from the composition start.
+    ///
+    /// The composition range's document ACP start is NOT the caret: the caret
+    /// sits at the end of the current selection. Returns `None` (the caller
+    /// then falls back to the legacy behavior) when the selection cannot be
+    /// queried; every failure is logged at debug level.
+    fn composition_caret_offset(
+        &self,
+        ec: u32,
+        comp_acp_start: i32,
+        text_len: usize,
+    ) -> Option<usize> {
+        unsafe {
+            let inner = &*self.input_ctx;
+            let Some(ref ctx) = inner.ctx else {
+                log_debug("composition_caret_offset: no context");
+                return None;
+            };
+
+            let mut selection = [TF_SELECTION::default()];
+            let mut fetched = 0u32;
+            if let Err(e) = ctx.GetSelection(ec, TF_DEFAULT_SELECTION, &mut selection, &mut fetched)
+            {
+                log_debug(&format!("composition_caret_offset: GetSelection failed: {:?}", e));
+                return None;
+            }
+            if fetched == 0 {
+                log_debug("composition_caret_offset: GetSelection returned no selection");
+                return None;
+            }
+
+            // TF_SELECTION.range is ManuallyDrop: take ownership so the range
+            // reference is released on drop instead of leaked.
+            let [sel] = selection;
+            let Some(sel_range) = ManuallyDrop::into_inner(sel.range) else {
+                log_debug("composition_caret_offset: selection has no range");
+                return None;
+            };
+            let sel_acp = match sel_range.cast::<ITfRangeACP>() {
+                Ok(acp) => acp,
+                Err(e) => {
+                    log_debug(&format!(
+                        "composition_caret_offset: selection range is not ACP: {:?}",
+                        e
+                    ));
+                    return None;
+                }
+            };
+            let (mut sel_start, mut sel_len) = (0i32, 0i32);
+            if let Err(e) = sel_acp.GetExtent(&mut sel_start, &mut sel_len) {
+                log_debug(&format!(
+                    "composition_caret_offset: selection GetExtent failed: {:?}",
+                    e
+                ));
+                return None;
+            }
+
+            // Use the selection end as the caret. Extents are normalized
+            // (start <= end), so start + len is the end even for a reversed
+            // selection.
+            Some(clamp_caret_offset(sel_start + sel_len, comp_acp_start, text_len))
+        }
+    }
+
     fn run_preedit_end(&self) {
         unsafe {
             if let Some(cb) = &(*self.input_ctx).preedit_cb {
@@ -542,7 +613,14 @@ impl ITfTextEditSink_Impl for CompositionHandler_Impl {
                                 .map(|r| r.unwrap_or('\u{FFFD}'))
                                 .collect();
                             log_debug(&format!("PreEdit text: '{}'", text));
-                            self.run_preedit_update(text, acp_start as usize);
+                            // The cursor is the caret's offset inside the
+                            // composition text, not the composition's absolute
+                            // ACP start. Fall back to the legacy behavior when
+                            // the selection cannot be queried.
+                            let cursor = self
+                                .composition_caret_offset(ec, acp_start, actual_len)
+                                .unwrap_or(acp_start as usize);
+                            self.run_preedit_update(text, cursor);
                         } else {
                             log_debug(&format!(
                                 "GetText failed or empty: result={:?}, fetched={}",
@@ -1622,5 +1700,23 @@ impl Drop for TsInputContext {
         }
 
         log_info("TsInputContext dropped");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_caret_offset_stays_inside_composition() {
+        assert_eq!(clamp_caret_offset(102, 100, 4), 2);
+        assert_eq!(clamp_caret_offset(100, 100, 4), 0);
+        assert_eq!(clamp_caret_offset(104, 100, 4), 4);
+        // Caret beyond the composition end clamps to the text length.
+        assert_eq!(clamp_caret_offset(110, 100, 4), 4);
+        // Caret before the composition start clamps to 0.
+        assert_eq!(clamp_caret_offset(98, 100, 4), 0);
+        // Empty composition text.
+        assert_eq!(clamp_caret_offset(100, 100, 0), 0);
     }
 }
