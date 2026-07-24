@@ -113,6 +113,11 @@ fn register_native_methods(env: &mut Env<'_>) -> Result<(), jni::errors::Error> 
             rust_process_key_event as *const (),
         ),
         NativeMethodOwned::new(
+            "rust_ime_library_poll_events",
+            "(J)V",
+            rust_poll_events as *const (),
+        ),
+        NativeMethodOwned::new(
             "rust_ime_library_set_pre_edit_rect",
             "(JIIII)V",
             rust_set_pre_edit_rect as *const (),
@@ -341,6 +346,14 @@ extern "system" fn rust_process_key_event(
     } else {
         JNI_FALSE
     }
+}
+
+extern "system" fn rust_poll_events(_env: EnvUnowned, _class: JClass, ptr: jlong) {
+    let Some(context) = context_mut(ptr) else {
+        logger::error("Cannot poll events without an input context");
+        return;
+    };
+    context.poll_events();
 }
 
 extern "system" fn rust_set_pre_edit_rect(

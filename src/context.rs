@@ -146,6 +146,14 @@ impl ImeContext {
         }
     }
 
+    pub fn poll_events(&mut self) {
+        #[cfg(target_os = "linux")]
+        self.backend.poll_events();
+
+        #[cfg(not(target_os = "linux"))]
+        let _ = self;
+    }
+
     pub fn set_preedit_rect(&mut self, x: i32, y: i32, width: i32, height: i32) {
         #[cfg(windows)]
         match &mut self.backend {

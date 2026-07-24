@@ -127,6 +127,10 @@ impl LinuxInputContext {
             .process_key_event(keyval, keycode, state, is_release)
     }
 
+    pub fn poll_events(&mut self) {
+        self.pump_backend_events();
+    }
+
     fn pump_backend_events(&mut self) {
         let mut events = Vec::new();
         self.backend.poll_events(&mut events);
