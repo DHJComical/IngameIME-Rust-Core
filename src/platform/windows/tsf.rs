@@ -924,17 +924,22 @@ impl InputModeHandler {
                 return;
             };
 
-            if let Ok(var) = mode.GetValue() {
+            // Only clear the NATIVE bit (0x0001); keep the other conversion
+            // flags (FULLSHAPE, ROMAN, ...) intact.
+            let next_mode_val = if let Ok(var) = mode.GetValue() {
                 let mode_val = var.Anonymous.Anonymous.Anonymous.intVal;
                 if (mode_val & 0x0001) == 0 {
                     return;
                 }
-            }
+                mode_val & !0x0001
+            } else {
+                0
+            };
 
             let mut variant = VARIANT::default();
             let variant_inner = &mut *variant.Anonymous.Anonymous;
             variant_inner.vt = VT_I4;
-            variant_inner.Anonymous.intVal = 0;
+            variant_inner.Anonymous.intVal = next_mode_val;
 
             let client_id = (*self.input_ctx).client_id;
             if let Err(e) = mode.SetValue(client_id, &variant as *const _) {
