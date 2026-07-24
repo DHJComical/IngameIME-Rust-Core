@@ -369,9 +369,8 @@ impl Imm32Backend {
 
     fn refresh_candidates(&mut self) {
         let (mut candidates, selected) = self.read_candidate_page();
-        if candidates.len() > self.candidate_config.max_candidates {
-            candidates.truncate(self.candidate_config.max_candidates);
-        }
+        let selected =
+            truncate_candidates(&mut candidates, selected, self.candidate_config.max_candidates);
         self.callbacks.emit_candidate_update(&candidates, selected);
     }
 
@@ -428,15 +427,21 @@ impl Imm32Backend {
                 } else {
                     copied as usize
                 };
+                // 索引对齐：header.dwSelection 基于原始候选数组，out 必须与原始
+                // 候选索引一一对应，任何条目都不得被跳过，只能以占位项顶替。
                 if start >= end || end > bytes.len() {
+                    logger::warn(&format!(
+                        "candidate {idx} has invalid byte range [{start}, {end})"
+                    ));
+                    out.push(String::new());
                     continue;
                 }
 
-                let mut text = utf16_bytes_to_string(&bytes[start..end]);
-                text = text.trim().to_string();
-                if !text.is_empty() {
-                    out.push(text);
-                }
+                let text = utf16_bytes_to_string(&bytes[start..end]);
+                // 空文本保留为空字符串占位而不是跳过（跳过会让 dwSelection 换算出的
+                // 选中索引相对 out 错位，高亮错行）；用 "" 而非 " " 是因为占位项
+                // 不应伪装成可提交的真实文本。
+                out.push(text.trim().to_string());
             }
 
             let selected = (header.dwSelection as usize).saturating_sub(page_start);
@@ -479,6 +484,15 @@ unsafe extern "system" fn window_proc(
     backend.handle_window_message(msg, wparam, lparam)
 }
 
+/// 按 `max` 截断候选列表，并把 `selected` 钳制到截断后的合法范围内。
+/// 空列表时返回 0（此时没有候选可高亮，调用方按无选中处理）。
+fn truncate_candidates(candidates: &mut Vec<String>, selected: usize, max: usize) -> usize {
+    if candidates.len() > max {
+        candidates.truncate(max);
+    }
+    selected.min(candidates.len().saturating_sub(1))
+}
+
 fn utf16_bytes_to_string(bytes: &[u8]) -> String {
     let mut units = Vec::with_capacity(bytes.len() / 2);
     for pair in bytes.chunks_exact(2) {
@@ -488,4 +502,45 @@ fn utf16_bytes_to_string(bytes: &[u8]) -> String {
         let _ = units.pop();
     }
     String::from_utf16_lossy(&units)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_candidates;
+
+    fn texts(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn truncate_drops_tail_and_clamps_selection_into_range() {
+        let mut candidates = texts(&["a", "b", "c", "d", "e"]);
+        let selected = truncate_candidates(&mut candidates, 4, 3);
+        assert_eq!(candidates, texts(&["a", "b", "c"]));
+        assert_eq!(selected, 2);
+    }
+
+    #[test]
+    fn truncate_keeps_selection_when_within_range() {
+        let mut candidates = texts(&["a", "b", "c"]);
+        let selected = truncate_candidates(&mut candidates, 1, 9);
+        assert_eq!(candidates, texts(&["a", "b", "c"]));
+        assert_eq!(selected, 1);
+    }
+
+    #[test]
+    fn truncate_empty_list_yields_zero_selection() {
+        let mut candidates = Vec::new();
+        let selected = truncate_candidates(&mut candidates, 5, 9);
+        assert!(candidates.is_empty());
+        assert_eq!(selected, 0);
+    }
+
+    #[test]
+    fn truncate_to_zero_max_clears_list_and_zeroes_selection() {
+        let mut candidates = texts(&["a", "b"]);
+        let selected = truncate_candidates(&mut candidates, 1, 0);
+        assert!(candidates.is_empty());
+        assert_eq!(selected, 0);
+    }
 }
