@@ -84,8 +84,16 @@ impl Imm32Backend {
                 window_proc as *const () as usize as isize,
             );
             if old_ptr == 0 {
-                logger::warn("SetWindowLongPtrW returned 0 when installing subclass proc");
+                // 子类化安装失败：该窗口此前没有可链接的旧 WndProc，IME 消息永远
+                // 到不了 backend；若带病继续运行，Drop 还会把窗口 WndProc 恢复成
+                // 空地址导致崩溃。必须 fail-fast，按创建逆序回滚已分配的资源。
+                logger::error("SetWindowLongPtrW failed to install subclass proc");
+                let _ = RemovePropW(hwnd, CONTEXT_PROP);
+                ImmAssociateContext(hwnd, previous_himc);
+                let _ = ImmDestroyContext(himc);
+                return None;
             }
+            // 仅在安装成功时记录旧 WndProc，Drop 据此判断是否需要恢复。
             backend.old_wndproc = Some(transmute(old_ptr));
 
             if !ImmSetOpenStatus(himc, true).as_bool() {
