@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use async_io::Timer;
 use futures_lite::{StreamExt, future};
+use zbus::connection::Builder;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
-use zbus::{Connection, Message, proxy};
+use zbus::{Message, proxy};
 
 use super::backend::EngineEvent;
 use crate::model::InputMode;
@@ -179,9 +180,11 @@ struct WorkerState {
 
 impl WorkerState {
     async fn connect() -> Result<Self, String> {
-        let connection = Connection::session()
+        let connection = Builder::ibus()
+            .map_err(|err| format!("failed to resolve IBus bus address: {err}"))?
+            .build()
             .await
-            .map_err(|err| format!("failed to open session bus: {err}"))?;
+            .map_err(|err| format!("failed to connect to IBus bus: {err}"))?;
         let bus = IBusProxy::new(&connection)
             .await
             .map_err(|err| format!("failed to create IBus bus proxy: {err}"))?;
