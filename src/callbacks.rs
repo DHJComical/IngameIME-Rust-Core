@@ -1,4 +1,4 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use crate::model::InputMode;
 
@@ -150,7 +150,9 @@ mod tests {
 
         // The getter must hand back a usable clone that can be invoked after the
         // store (and, in real usage, its enclosing lock) is no longer borrowed.
-        let cb = store.commit_callback().expect("commit callback should be set");
+        let cb = store
+            .commit_callback()
+            .expect("commit callback should be set");
         cb("hello".to_string());
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);

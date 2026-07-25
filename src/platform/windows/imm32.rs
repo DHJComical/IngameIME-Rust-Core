@@ -377,8 +377,11 @@ impl Imm32Backend {
 
     fn refresh_candidates(&mut self) {
         let (mut candidates, selected) = self.read_candidate_page();
-        let selected =
-            truncate_candidates(&mut candidates, selected, self.candidate_config.max_candidates);
+        let selected = truncate_candidates(
+            &mut candidates,
+            selected,
+            self.candidate_config.max_candidates,
+        );
         self.callbacks.emit_candidate_update(&candidates, selected);
     }
 

@@ -374,7 +374,10 @@ impl CompositionHandler {
             let mut fetched = 0u32;
             if let Err(e) = ctx.GetSelection(ec, TF_DEFAULT_SELECTION, &mut selection, &mut fetched)
             {
-                log_debug(&format!("composition_caret_offset: GetSelection failed: {:?}", e));
+                log_debug(&format!(
+                    "composition_caret_offset: GetSelection failed: {:?}",
+                    e
+                ));
                 return None;
             }
             if fetched == 0 {
@@ -411,7 +414,11 @@ impl CompositionHandler {
             // Use the selection end as the caret. Extents are normalized
             // (start <= end), so start + len is the end even for a reversed
             // selection.
-            Some(clamp_caret_offset(sel_start + sel_len, comp_acp_start, text_len))
+            Some(clamp_caret_offset(
+                sel_start + sel_len,
+                comp_acp_start,
+                text_len,
+            ))
         }
     }
 
@@ -1689,10 +1696,7 @@ impl Drop for TsInputContext {
                     //    composition state (mirrors the pattern in set_activated).
                     if let Ok(services) = ctx.cast::<ITfContextOwnerCompositionServices>() {
                         if let Err(e) = services.TerminateComposition(None) {
-                            log_warn(&format!(
-                                "Drop: TerminateComposition failed: {:?}",
-                                e
-                            ));
+                            log_warn(&format!("Drop: TerminateComposition failed: {:?}", e));
                         }
                     }
 
@@ -1704,8 +1708,7 @@ impl Drop for TsInputContext {
                     //    composition, DoEditSession's `is_empty` check will be true
                     //    and it will NOT re-commit, so this flush cannot duplicate a
                     //    commit that the pending async session already performed.
-                    let edit_session: ITfEditSession =
-                        inner_ref.composition_handler.to_interface();
+                    let edit_session: ITfEditSession = inner_ref.composition_handler.to_interface();
                     if let Err(e) = ctx.RequestEditSession(
                         inner_ref.client_id,
                         &edit_session,
