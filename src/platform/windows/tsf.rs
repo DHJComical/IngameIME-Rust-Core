@@ -1305,7 +1305,16 @@ impl TsInputContext {
                 // Create context with composition sink (like C version)
                 log_debug("Calling CreateContext with CompositionHandler as sink...");
                 let mut edit_cookie = 0u32;
-                let comp_sink: IUnknown = (*inner_ptr).composition_handler.cast().ok()?;
+                let comp_sink: IUnknown = match (*inner_ptr).composition_handler.cast() {
+                    Ok(sink) => sink,
+                    Err(e) => {
+                        log_error(&format!(
+                            "Failed to cast CompositionHandler to IUnknown: {}",
+                            e
+                        ));
+                        return None;
+                    }
+                };
                 if let Err(e) = doc_mgr.CreateContext(
                     client_id,
                     0,
@@ -1344,8 +1353,23 @@ impl TsInputContext {
                     // Register ITfContextOwner using ITfSource::AdviseSink
                     log_debug("Registering ITfContextOwner...");
                     let owner: ITfContextOwner = (*inner_ptr).context_owner.to_interface();
-                    let source: ITfSource = ctx.cast().ok()?;
-                    let unknown: IUnknown = owner.cast().ok()?;
+                    let source: ITfSource = match ctx.cast() {
+                        Ok(source) => source,
+                        Err(e) => {
+                            log_error(&format!("Failed to cast ITfContext to ITfSource: {}", e));
+                            return None;
+                        }
+                    };
+                    let unknown: IUnknown = match owner.cast() {
+                        Ok(unknown) => unknown,
+                        Err(e) => {
+                            log_error(&format!(
+                                "Failed to cast ITfContextOwner to IUnknown: {}",
+                                e
+                            ));
+                            return None;
+                        }
+                    };
                     if let Err(e) = source.AdviseSink(&ITfContextOwner::IID, &unknown) {
                         log_warn(&format!("Failed to register context owner sink: {}", e));
                     } else {
