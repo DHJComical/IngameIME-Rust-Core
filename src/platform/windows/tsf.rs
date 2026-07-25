@@ -1071,11 +1071,11 @@ pub struct TsInputContextInner {
 /// Unless `dismiss`ed, dropping the guard deactivates the thread manager (once
 /// a client id has been activated) and then frees msctf.dll, so no failure
 /// path after `LoadLibraryW` leaks the activated thread manager or the DLL
-/// reference. The order matters: `Deactivate` calls into msctf.dll and must
-/// run before `FreeLibrary`.
+/// reference. The order matters: `Deactivate` and the final COM `Release` call
+/// into msctf.dll and must run before `FreeLibrary`.
 ///
-/// The success path must `dismiss()` the guard: msctf.dll has to stay loaded
-/// for the lifetime of the context, and the thread manager is deactivated in
+/// The success path must `dismiss()` the guard: msctf.dll stays loaded (it is
+/// never freed), and the thread manager is deactivated in
 /// `TsInputContext::drop` instead.
 struct TsfInitGuard {
     h_msctf: HMODULE,
@@ -1109,6 +1109,12 @@ impl Drop for TsfInitGuard {
                 && let Err(e) = thread_mgr.Deactivate()
             {
                 log_warn(&format!("TsfInitGuard: Deactivate failed: {:?}", e));
+            }
+            // Release the COM reference BEFORE FreeLibrary: the field's drop
+            // glue runs only after this function returns, which would be a
+            // call into a potentially unloaded msctf.dll.
+            if let Some(thread_mgr) = self.thread_mgr.take() {
+                drop(thread_mgr);
             }
             let _ = FreeLibrary(self.h_msctf);
         }
@@ -1424,8 +1430,9 @@ impl TsInputContext {
 
             log_info("TsInputContext created successfully");
 
-            // Success: msctf.dll must stay loaded and the thread manager stays
-            // activated; both are released in `TsInputContext::drop`.
+            // Success: the thread manager stays activated and is deactivated
+            // in `TsInputContext::drop`; msctf.dll intentionally stays loaded
+            // for the rest of the process lifetime.
             init_guard.dismiss();
 
             Some(Box::new(TsInputContext {
